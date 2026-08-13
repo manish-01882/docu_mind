@@ -1,0 +1,16 @@
+streamlit
+unstructured[all-docs]
+pillow
+lxml
+chromadb
+tiktoken
+langchain
+langchain-community
+langchain-openai
+langchain-groq
+python-dotenv
+requests
+Pillow
+sentence-transformers
+langchain-chroma
+langchain-huggingface

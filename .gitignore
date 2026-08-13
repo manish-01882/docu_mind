@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.log
+
+# Jupyter Notebooks (if any)
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# Docker
+*.tar
+*.img
+*.container
+*.pid
+
+# VSCode/IDE
+.vscode/
+.idea/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# Temp/test files (as you mentioned)
+temp.py
+test_*.py
+*.test.py
