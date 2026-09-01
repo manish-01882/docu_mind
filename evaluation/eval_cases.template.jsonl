@@ -1,0 +1,1 @@
+{"id":"replace-with-unique-case-id","document":"data/attention.pdf","question":"Replace this with a question that the PDF can answer.","expected_sources":[{"source_file":"data/attention.pdf","page_number":1,"modality":"text"}],"reference_answer":"Write a concise reference answer for human review.","required_terms":["replace","these","terms"]}

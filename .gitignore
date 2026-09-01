@@ -39,3 +39,6 @@ Thumbs.db
 temp.py
 test_*.py
 *.test.py
+
+# Locally generated RAG evaluation reports
+evaluation/results/

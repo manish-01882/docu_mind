@@ -3,9 +3,9 @@ import sys
 import os
 import uuid
 from base64 import b64decode
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from perplexity_api import query_perplexity
+from groq_api import VISION_MODEL, query_groq
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -80,7 +80,7 @@ def build_prompt(kwargs):
         })
 
     return {
-        "model": "sonar",  # Perplexity model
+        "model": VISION_MODEL,
         "messages": [
             {
                 "role": "user",
@@ -90,24 +90,31 @@ def build_prompt(kwargs):
     }
 
 # --------------------------
-# ✅ Perplexity Chain (Simple)
+# ✅ Groq Chain (Simple)
 # --------------------------
-def get_rag_chain(retriever):
+def get_rag_chain(retriever, k=4):
+    """Return the standard RAG chain using an explicit retrieval depth."""
     return (
         {
-            "context": RunnableLambda(lambda x: retriever.vectorstore.similarity_search(x["question"])) | RunnableLambda(parse_docs),
-            "question": RunnablePassthrough()
+            "context": RunnableLambda(
+                lambda x: parse_docs(
+                    retriever.vectorstore.similarity_search(x["question"], k=k),
+                    retriever.docstore,
+                )
+            ),
+            "question": RunnableLambda(lambda x: x["question"])
         }
         | RunnableLambda(build_prompt)
-        | RunnableLambda(query_perplexity)
+        | RunnableLambda(query_groq)
         | StrOutputParser()
     )
 
 
 # --------------------------
-# ✅ Perplexity Chain With Image Saving
+# ✅ Groq Chain With Image Saving
 # --------------------------
-def get_rag_chain_with_sources(retriever):
+def get_rag_chain_with_sources(retriever, k=4):
+    """Return the source-display RAG chain using an explicit retrieval depth."""
     def process_and_save(response_with_context):
         context = response_with_context.get("context", {})
         images = context.get("images", [])
@@ -139,11 +146,16 @@ def get_rag_chain_with_sources(retriever):
 
     return (
         {
-            "context": RunnableLambda(lambda x: parse_docs(retriever.vectorstore.similarity_search(x["question"]), retriever.docstore)),
-            "question": RunnablePassthrough()
+            "context": RunnableLambda(
+                lambda x: parse_docs(
+                    retriever.vectorstore.similarity_search(x["question"], k=k),
+                    retriever.docstore,
+                )
+            ),
+            "question": RunnableLambda(lambda x: x["question"])
         }
         | RunnablePassthrough().assign(
-            response=(RunnableLambda(build_prompt) | RunnableLambda(query_perplexity) | StrOutputParser())
+            response=(RunnableLambda(build_prompt) | RunnableLambda(query_groq) | StrOutputParser())
         )
         | RunnableLambda(process_and_save)
     )

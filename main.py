@@ -57,11 +57,11 @@ retriever = setup_retriever(vectorstore)
 
 print("Database have been setup....")
 
-store_documents(retriever, texts, text_summaries, "doc_id")
+store_documents(retriever, texts, text_summaries, "doc_id", source_file=file_path, modality="text")
 print("text summaries uploaded....")
-store_documents(retriever, tables, table_summaries, "doc_id")
+store_documents(retriever, tables, table_summaries, "doc_id", source_file=file_path, modality="table")
 print("table summaries uploaded....")
-store_documents(retriever, images, image_summaries, "doc_id")
+store_documents(retriever, images, image_summaries, "doc_id", source_file=file_path, modality="image")
 print("image summaries uploaded....")
 
 print("Entries have been pushed in vector store.....")
@@ -70,4 +70,3 @@ print("Entries have been pushed in vector store.....")
 chain = get_rag_chain(retriever)
 response = chain.invoke({"question": "Whaat are the points of ai email assistant?"})
 print(response)
-

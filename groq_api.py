@@ -1,4 +1,4 @@
-"""Perplexity API wrapper with an offline fallback."""
+"""Groq chat-completions wrapper with an offline fallback."""
 
 from __future__ import annotations
 
@@ -16,9 +16,12 @@ except ImportError:  # pragma: no cover - optional dependency
     def load_dotenv():
         return False
 
+
 load_dotenv()
-API_KEY = os.getenv("PERPLEXITY_API_KEY")
-API_URL = "https://api.perplexity.ai/chat/completions"
+API_KEY = os.getenv("GROQ_API_KEY")
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
+TEXT_MODEL = "openai/gpt-oss-20b"
+VISION_MODEL = "qwen/qwen3.6-27b"
 
 
 def _extract_prompt_text(payload):
@@ -41,8 +44,10 @@ def _extract_prompt_text(payload):
     return "\n".join(chunks)
 
 
-def _build_offline_response(payload):
+def _build_offline_response(payload, reason=None):
     prompt_text = _extract_prompt_text(payload)
+
+    diagnostic = f"\nGroq diagnostic: {reason}" if reason else ""
 
     context_match = re.search(
         r"Context:\s*(.*?)(?:\nQuestion:\s*|\Z)",
@@ -72,30 +77,33 @@ def _build_offline_response(payload):
                     f"Question: {question_text}\n"
                     "Relevant points:\n"
                     f"{bullet_list}"
+                    f"{diagnostic}"
                 )
 
             return (
                 "Offline fallback response based on the retrieved document context.\n"
                 "Relevant points:\n"
                 f"{bullet_list}"
+                f"{diagnostic}"
             )
 
     if question_text:
         return (
-            "Offline fallback response. No Perplexity API key is configured, so the app "
-            "cannot call the hosted model.\n"
+            "Offline fallback response. "
+            f"{reason or 'No GROQ_API_KEY is configured, so the app cannot call the hosted model.'}\n"
             f"Question: {question_text}"
         )
 
     return (
-        "Offline fallback response. No Perplexity API key is configured, and no prompt "
-        "context was available."
+        "Offline fallback response. "
+        f"{reason or 'No GROQ_API_KEY is configured, and no prompt context was available.'}"
     )
 
 
-def query_perplexity(payload):
+def query_groq(payload):
     if not API_KEY or requests is None:
-        return _build_offline_response(payload)
+        reason = "No GROQ_API_KEY is configured" if not API_KEY else "The requests package is unavailable"
+        return _build_offline_response(payload, reason)
 
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -106,7 +114,8 @@ def query_perplexity(payload):
         response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
-    except requests.RequestException:
-        pass
-
-    return _build_offline_response(payload)
+        return _build_offline_response(payload, f"Groq API returned HTTP {response.status_code}")
+    except requests.RequestException as error:
+        return _build_offline_response(payload, f"Groq request failed ({type(error).__name__})")
+    except (KeyError, IndexError, TypeError, ValueError):
+        return _build_offline_response(payload, "Groq returned an unexpected response format")

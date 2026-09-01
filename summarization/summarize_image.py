@@ -1,16 +1,9 @@
 
 
-import requests
 import base64
 from PIL import Image
 from io import BytesIO
-import os
-from dotenv import load_dotenv
-
-# Load API key from .env file
-load_dotenv()
-API_KEY = os.getenv("PERPLEXITY_API_KEY")  # Ensure this key is set in your .env
-API_URL = "https://api.perplexity.ai/chat/completions"
+from groq_api import VISION_MODEL, query_groq
 
 # Decode base64 to PIL Image
 def decode_base64_to_image(image_b64):
@@ -30,7 +23,7 @@ def get_image_summary(image_base64):
         encoded_image = encode_image_to_base64(image)
 
         payload = {
-            "model": "sonar",
+            "model": VISION_MODEL,
             "messages": [
                 {
                     "role": "user",
@@ -50,21 +43,26 @@ def get_image_summary(image_base64):
             ]
         }
 
-        headers = {
-            "Authorization": f"Bearer {API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        response = requests.post(API_URL, headers=headers, json=payload)
-
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            return f"❌ Error {response.status_code}: {response.text}"
+        return query_groq(payload)
 
     except Exception as e:
         return f"⚠️ Exception occurred: {str(e)}"
 
+
+def is_indexable_image_summary(summary):
+    """Exclude fallback/error messages from the vector index.
+
+    ``query_groq`` deliberately returns a readable offline response when a key
+    is unavailable. That response is useful to a caller, but it is not a
+    description of an image and must not compete with real document summaries
+    during retrieval.
+    """
+    if not isinstance(summary, str) or not summary.strip():
+        return False
+    return not summary.lstrip().startswith(("Offline fallback response", "⚠️ Exception occurred:"))
+
+
 # Batch summarization (for a list of base64 strings)
 def summarize_images(images_base64):
-    return [get_image_summary(img_b64) for img_b64 in images_base64]
+    summaries = [get_image_summary(img_b64) for img_b64 in images_base64]
+    return [summary if is_indexable_image_summary(summary) else "" for summary in summaries]

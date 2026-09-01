@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_vectorstore():
+def get_vectorstore(collection_name="multi_modal_rag"):
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    return Chroma(collection_name="multi_modal_rag", embedding_function=embeddings)
+    return Chroma(collection_name=collection_name, embedding_function=embeddings)
 
 # def test_vectorstore():
 #     vectorstore = get_vectorstore()

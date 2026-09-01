@@ -3,6 +3,7 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
+from groq_api import TEXT_MODEL
 
 load_dotenv()
 
@@ -14,7 +15,7 @@ Table or text chunk: {element}
 """
 
 prompt = ChatPromptTemplate.from_template(prompt_text)
-model = ChatGroq(temperature=0.5, model="llama-3.1-8b-instant")
+model = ChatGroq(temperature=0.5, model=TEXT_MODEL)
 summarize_chain = {"element": lambda x: x} | prompt | model | StrOutputParser()
 
 def safe_batch(inputs, max_concurrency=1, retry_delay=15, retries=3):
