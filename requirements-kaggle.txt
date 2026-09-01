@@ -1,0 +1,17 @@
+# Minimal runtime for the Kaggle RAG benchmark. Do not use unstructured[all-docs]:
+# Smart Doc accepts PDFs only, and the extra pulls in unrelated integrations
+# (including Whisper) that conflict with Kaggle's preinstalled environment.
+unstructured[pdf]
+pillow
+lxml
+chromadb
+langchain
+langchain-classic
+langchain-community
+python-dotenv
+sentence-transformers
+langchain-chroma
+langchain-huggingface
+torch
+transformers>=4.50.0
+accelerate

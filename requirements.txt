@@ -1,15 +1,14 @@
 streamlit
-unstructured[all-docs]
+unstructured[pdf]
 pillow
 lxml
 chromadb
 tiktoken
 langchain
+langchain-classic
 langchain-community
-langchain-openai
 python-dotenv
 requests
-Pillow
 sentence-transformers
 langchain-chroma
 langchain-huggingface
