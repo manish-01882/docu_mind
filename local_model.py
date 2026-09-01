@@ -8,13 +8,14 @@ Transformers model directory. When neither is set, the Hugging Face model ID in
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 
 DEFAULT_MODEL_ID = "google/gemma-3-4b-it"
@@ -98,7 +99,10 @@ def _model_device(model):
 
 def _decode_image(image_base64: str) -> Image.Image:
     payload = image_base64.split(",", 1)[-1] if "," in image_base64 else image_base64
-    return Image.open(BytesIO(base64.b64decode(payload))).convert("RGB")
+    try:
+        return Image.open(BytesIO(base64.b64decode(payload, validate=True))).convert("RGB")
+    except (ValueError, binascii.Error, UnidentifiedImageError) as error:
+        raise LocalModelError("Image context could not be decoded") from error
 
 
 def _generate(messages, *, max_new_tokens: int) -> str:
@@ -204,7 +208,13 @@ def answer_question(question: str, texts: Iterable[object] = (), images: Iterabl
     content = [{"type": "text", "text": prompt}]
     image_limit = _env_positive_int("LOCAL_MAX_CONTEXT_IMAGES", DEFAULT_MAX_CONTEXT_IMAGES)
     for image_base64 in list(images)[:image_limit]:
-        content.append({"type": "image", "image": _decode_image(image_base64)})
+        try:
+            image = _decode_image(image_base64)
+        except LocalModelError:
+            # Retrieval may contain malformed image payloads from a PDF parser.
+            # Continue with text evidence instead of failing the full answer.
+            continue
+        content.append({"type": "image", "image": image})
 
     return _generate([{"role": "user", "content": content}], max_new_tokens=320)
 

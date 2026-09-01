@@ -3,9 +3,11 @@ import sys
 import os
 import uuid
 from base64 import b64decode
+from io import BytesIO
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from local_model import answer_question
+from PIL import Image, UnidentifiedImageError
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -26,6 +28,20 @@ def save_image_if_relevant(image_b64, folder="saved_images", prefix="matched_ima
     except Exception as e:
         print(f"[ERROR] ❌ Failed to save image: {e}")
 
+def is_image_base64(value):
+    """Return whether a string decodes to a real image, not merely Base64 bytes."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    payload = value.split(",", 1)[-1] if "," in value else value
+    try:
+        image_data = b64decode(payload, validate=True)
+        with Image.open(BytesIO(image_data)) as image:
+            image.verify()
+    except (ValueError, UnidentifiedImageError):
+        return False
+    return True
+
+
 # --------------------------
 # ✅ Preprocessor
 # --------------------------
@@ -33,10 +49,9 @@ def parse_docs(docs, docstore=None):
     b64, text = [], []
     for doc in docs:
         if isinstance(doc, str):
-            try:
-                b64decode(doc)
+            if is_image_base64(doc):
                 b64.append(doc)
-            except Exception:
+            else:
                 text.append(doc)
         else:
             doc_id = doc.metadata.get("doc_id")
@@ -44,10 +59,9 @@ def parse_docs(docs, docstore=None):
                 full_doc = docstore.mget([doc_id])[0]
                 if full_doc is not None:
                     content = full_doc.page_content
-                    try:
-                        b64decode(content)
+                    if is_image_base64(content):
                         b64.append(content)
-                    except Exception:
+                    else:
                         text.append(full_doc)
                 else:
                     text.append(doc)
