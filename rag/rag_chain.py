@@ -5,7 +5,7 @@ import uuid
 from base64 import b64decode
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from groq_api import VISION_MODEL, query_groq
+from local_model import answer_question
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -57,40 +57,17 @@ def parse_docs(docs, docstore=None):
 
 
 
-# --------------------------
-# ✅ Prompt Builder
-# --------------------------
-def build_prompt(kwargs):
-    docs_by_type = kwargs["context"]
-    user_question = kwargs["question"]
-
-    context_text = "".join([t.page_content for t in docs_by_type["texts"]])
-
-    prompt_content = [
-        {
-            "type": "text",
-            "text": f"Answer the question based only on the following context.\nContext:\n{context_text}\nQuestion: {user_question}"
-        }
-    ]
-
-    for image in docs_by_type["images"]:
-        prompt_content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{image}"}
-        })
-
-    return {
-        "model": VISION_MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt_content
-            }
-        ]
-    }
+def generate_answer(kwargs):
+    """Run local Gemma against the retrieved text and image context."""
+    context = kwargs["context"]
+    return answer_question(
+        kwargs["question"],
+        texts=context["texts"],
+        images=context["images"],
+    )
 
 # --------------------------
-# ✅ Groq Chain (Simple)
+# ✅ Local Gemma chain (Simple)
 # --------------------------
 def get_rag_chain(retriever, k=4):
     """Return the standard RAG chain using an explicit retrieval depth."""
@@ -104,14 +81,13 @@ def get_rag_chain(retriever, k=4):
             ),
             "question": RunnableLambda(lambda x: x["question"])
         }
-        | RunnableLambda(build_prompt)
-        | RunnableLambda(query_groq)
+        | RunnableLambda(generate_answer)
         | StrOutputParser()
     )
 
 
 # --------------------------
-# ✅ Groq Chain With Image Saving
+# ✅ Local Gemma chain With Image Saving
 # --------------------------
 def get_rag_chain_with_sources(retriever, k=4):
     """Return the source-display RAG chain using an explicit retrieval depth."""
@@ -155,7 +131,7 @@ def get_rag_chain_with_sources(retriever, k=4):
             "question": RunnableLambda(lambda x: x["question"])
         }
         | RunnablePassthrough().assign(
-            response=(RunnableLambda(build_prompt) | RunnableLambda(query_groq) | StrOutputParser())
+            response=(RunnableLambda(generate_answer) | StrOutputParser())
         )
         | RunnableLambda(process_and_save)
     )

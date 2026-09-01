@@ -158,7 +158,7 @@ from summarization.summarize_image import summarize_images
 from rag.vector_store import get_vectorstore
 from rag.retrieval import setup_retriever, store_documents
 from rag.rag_chain import get_rag_chain, get_rag_chain_with_sources
-from groq_api import TEXT_MODEL, query_groq
+from local_model import answer_chat, load_local_model
 
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="MultiModal RAG", layout="centered")
@@ -173,6 +173,12 @@ if "retriever" not in st.session_state:
 
 if "pdf_uploaded" not in st.session_state:
     st.session_state.pdf_uploaded = False
+
+
+@st.cache_resource(show_spinner=False)
+def get_local_model_resource():
+    """Keep the local Gemma model loaded across Streamlit reruns."""
+    return load_local_model()
 
 
 def split_model_response(raw_response):
@@ -236,6 +242,9 @@ def process_pdf(file_bytes, source_file):
                 elif el_type == "Table":
                     tables.append(el)
 
+    st.info("🧠 Loading local Gemma model...")
+    get_local_model_resource()
+
     st.info("📝 Preparing semantic summaries...")
     text_summaries = summarize_texts([t.text for t in texts])
     table_summaries = summarize_tables([t.metadata.text_as_html for t in tables])
@@ -279,12 +288,9 @@ if submit and query:
 
         # Check if relevant documents were retrieved
         if not response.strip():
-            st.warning("⚠️ No relevant context found in PDF. Falling back to Groq.")
-            payload = {
-                "model": TEXT_MODEL,
-                "messages": [{"role": "user", "content": [{"type": "text", "text": query}]}],
-            }
-            response, reasoning = split_model_response(query_groq(payload))
+            st.warning("⚠️ No relevant context found in the PDF. Using local Gemma without document context.")
+            get_local_model_resource()
+            response, reasoning = split_model_response(answer_chat([("user", query)]))
 
         # Keep only the final answer in the conversation context and history.
         st.session_state.chat_history.append(("user", query))
@@ -314,22 +320,16 @@ if submit and query:
                     st.image(f"data:image/jpeg;base64,{img_b64}", caption=f"Image {i+1}")
 
     else:
-        # No PDF uploaded: use Groq directly
-        st.info("💬 No PDF found — using Groq to answer the question...")
+        # No PDF uploaded: use local Gemma directly.
+        st.info("💬 No PDF found — using local Gemma to answer the question...")
 
         # Reconstruct conversation history (last 10 messages)
         st.info("📜 Building conversation context from history...")
-        messages = []
-        for role, msg in st.session_state.chat_history[-10:]:  # last 10 messages
-            messages.append({"role": role, "content": [{"type": "text", "text": msg}]})
+        messages = st.session_state.chat_history[-10:] + [("user", query)]
 
-        # Append current user message at the end
-        messages.append({"role": "user", "content": [{"type": "text", "text": query}]})
-
-        # Prepare payload and call ChatGroq
-        st.info("🤖 Querying Groq model for response...")
-        payload = {"model": TEXT_MODEL, "messages": messages}
-        response, reasoning = split_model_response(query_groq(payload))
+        st.info("🤖 Querying local Gemma model for response...")
+        get_local_model_resource()
+        response, reasoning = split_model_response(answer_chat(messages))
 
         # Keep only the final answer in the conversation context and history.
         st.session_state.chat_history.append(("user", query))
