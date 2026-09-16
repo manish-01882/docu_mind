@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from typing import Iterable
 
-from groq_api import TEXT_MODEL, VISION_MODEL, query_groq
+from groq_api import TEXT_MODEL, VISION_MODEL, GroqError, query_groq, query_groq_strict
 
 
 DEFAULT_MAX_CONTEXT_CHARS = 16_000
@@ -84,6 +84,18 @@ def _ask_groq(content: list[dict], *, has_images: bool) -> str:
     )
 
 
+def _summarize_with_groq(content: list[dict], *, has_images: bool) -> str:
+    """Summarise strictly: a failure must not be indexed as if it were a summary."""
+    payload = {
+        "model": VISION_MODEL if has_images else TEXT_MODEL,
+        "messages": [{"role": "user", "content": content}],
+    }
+    try:
+        return query_groq_strict(payload)
+    except GroqError as error:
+        raise InferenceError(str(error)) from error
+
+
 def summarize_text(text: str) -> str:
     """Summarise a text chunk or an HTML table for the retrieval index."""
     if not isinstance(text, str) or not text.strip():
@@ -94,7 +106,7 @@ def summarize_text(text: str) -> str:
 
         return _local(text)
 
-    return _ask_groq(
+    return _summarize_with_groq(
         [{"type": "text", "text": f"{SUMMARIZE_TEXT_PROMPT}{text}"}],
         has_images=False,
     )
@@ -114,7 +126,7 @@ def summarize_image(image_base64: str) -> str:
         except LocalModelError as error:
             raise InferenceError(str(error)) from error
 
-    return _ask_groq(
+    return _summarize_with_groq(
         [
             {"type": "text", "text": SUMMARIZE_IMAGE_PROMPT},
             _image_part(image_base64),

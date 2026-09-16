@@ -169,6 +169,7 @@ The repository already contains everything the platform reads:
 ### Notes and limits
 
 - **`ImportError: libGL.so.1`** means `packages.txt` was not applied. `unstructured[pdf]` pulls in OpenCV, which needs system libraries the Streamlit Cloud image does not ship. Confirm `packages.txt` is committed, then reboot the app so apt runs again.
+- **Groq rate limits (HTTP 429).** Indexing issues one API call per extracted element, and the free tier allows roughly 30 requests per minute, so a long PDF will hit the limit. Requests retry automatically with backoff, honouring Groq's `retry-after` header. Elements that still fail are left out of the index and the app says how many — wait a minute and re-upload for full coverage, or raise the limit on a paid Groq tier.
 - **First upload is slow.** `hi_res` parsing downloads layout-detection models on first use, then runs them on CPU. Expect a minute or more for a long PDF.
 - **If the app runs out of memory**, add `UNSTRUCTURED_STRATEGY = "fast"` to Secrets. Parsing gets much lighter, at the cost of table structure and image extraction.
 - **Nothing persists.** The Chroma collection is in-memory, so every restart re-indexes. Community Cloud also sleeps idle apps.

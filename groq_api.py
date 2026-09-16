@@ -1,9 +1,11 @@
-"""Groq chat-completions wrapper with an offline fallback."""
+"""Groq chat-completions wrapper with retry handling and an offline fallback."""
 
 from __future__ import annotations
 
 import os
+import random
 import re
+import time
 
 try:
     import requests
@@ -21,6 +23,16 @@ load_dotenv()
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 TEXT_MODEL = "openai/gpt-oss-20b"
 VISION_MODEL = "qwen/qwen3.6-27b"
+
+# Free-tier accounts allow roughly 30 requests per minute, and indexing a PDF
+# issues one request per extracted element, so bursts hit 429 routinely.
+DEFAULT_MAX_ATTEMPTS = 5
+MAX_BACKOFF_SECONDS = 60.0
+RETRY_STATUS_CODES = frozenset({408, 409, 429, 500, 502, 503, 504})
+
+
+class GroqError(RuntimeError):
+    """Raised when Groq could not return a usable completion."""
 
 
 def get_api_key():
@@ -125,23 +137,67 @@ def _build_offline_response(payload, reason=None):
     )
 
 
-def query_groq(payload):
+def _retry_delay(response, attempt):
+    """Return how long to wait before retrying, preferring Groq's own advice."""
+    retry_after = response.headers.get("retry-after") if response is not None else None
+    if retry_after:
+        try:
+            return min(float(retry_after), MAX_BACKOFF_SECONDS)
+        except ValueError:
+            pass
+
+    # Exponential backoff with jitter so concurrent viewers do not retry in lockstep.
+    return min(2.0 ** attempt + random.uniform(0, 1), MAX_BACKOFF_SECONDS)
+
+
+def query_groq_strict(payload, max_attempts=DEFAULT_MAX_ATTEMPTS):
+    """Call Groq, retrying transient failures, and raise if no answer arrives.
+
+    Callers that index the result must use this rather than ``query_groq``: a
+    fallback string would otherwise be embedded and stored as though it were a
+    real summary, quietly corrupting retrieval.
+    """
     api_key = get_api_key()
-    if not api_key or requests is None:
-        reason = "No GROQ_API_KEY is configured" if not api_key else "The requests package is unavailable"
-        return _build_offline_response(payload, reason)
+    if not api_key:
+        raise GroqError("No GROQ_API_KEY is configured")
+    if requests is None:
+        raise GroqError("The requests package is unavailable")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+    last_reason = "Groq request failed"
+    attempts_made = 0
+    for attempt in range(max_attempts):
+        attempts_made = attempt + 1
+        try:
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+        except requests.RequestException as error:
+            last_reason = f"Groq request failed ({type(error).__name__})"
+            if attempt == max_attempts - 1:
+                break
+            time.sleep(_retry_delay(None, attempt))
+            continue
+
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        return _build_offline_response(payload, f"Groq API returned HTTP {response.status_code}")
-    except requests.RequestException as error:
-        return _build_offline_response(payload, f"Groq request failed ({type(error).__name__})")
-    except (KeyError, IndexError, TypeError, ValueError):
-        return _build_offline_response(payload, "Groq returned an unexpected response format")
+            try:
+                return response.json()["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError, ValueError) as error:
+                raise GroqError("Groq returned an unexpected response format") from error
+
+        last_reason = f"Groq API returned HTTP {response.status_code}"
+        if response.status_code not in RETRY_STATUS_CODES or attempt == max_attempts - 1:
+            break
+        time.sleep(_retry_delay(response, attempt))
+
+    raise GroqError(f"{last_reason} after {attempts_made} attempt(s)")
+
+
+def query_groq(payload):
+    """Call Groq, degrading to a context-grounded offline answer on failure."""
+    try:
+        return query_groq_strict(payload)
+    except GroqError as error:
+        return _build_offline_response(payload, str(error))

@@ -265,10 +265,26 @@ def process_pdf(file_bytes, source_file):
         st.info("🧠 Loading local Gemma model...")
         get_local_model_resource()
 
-    st.info("📝 Preparing semantic summaries...")
+    st.info("📝 Preparing semantic summaries... (one model call per element)")
     text_summaries = summarize_texts([t.text for t in texts])
     table_summaries = summarize_tables([t.metadata.text_as_html for t in tables])
     image_summaries = summarize_images(images)
+
+    # A summary that failed is stored as an empty string and dropped from the
+    # index, so report it rather than letting the document be silently partial.
+    attempted = len(text_summaries) + len(table_summaries) + len(image_summaries)
+    indexed = sum(
+        1
+        for summary in text_summaries + table_summaries + image_summaries
+        if summary and summary.strip()
+    )
+    if indexed < attempted:
+        st.warning(
+            f"⚠️ {attempted - indexed} of {attempted} elements could not be summarised "
+            "and were left out of the index, usually because of Groq rate limits. "
+            "Answers may miss parts of this document — wait a minute and re-upload "
+            "for full coverage."
+        )
 
     st.info("🗂️ Setting up the vector store...")
     vectorstore = get_vectorstore()
