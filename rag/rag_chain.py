@@ -6,7 +6,7 @@ from base64 import b64decode
 from io import BytesIO
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from local_model import answer_question
+from inference import answer_question
 from PIL import Image, UnidentifiedImageError
 
 # Add the project root directory to the Python path
@@ -72,7 +72,7 @@ def parse_docs(docs, docstore=None):
 
 
 def generate_answer(kwargs):
-    """Run local Gemma against the retrieved text and image context."""
+    """Answer from the retrieved text and image context via the active backend."""
     context = kwargs["context"]
     return answer_question(
         kwargs["question"],
@@ -81,7 +81,7 @@ def generate_answer(kwargs):
     )
 
 # --------------------------
-# ✅ Local Gemma chain (Simple)
+# ✅ RAG chain (Simple)
 # --------------------------
 def get_rag_chain(retriever, k=4):
     """Return the standard RAG chain using an explicit retrieval depth."""
@@ -101,7 +101,7 @@ def get_rag_chain(retriever, k=4):
 
 
 # --------------------------
-# ✅ Local Gemma chain With Image Saving
+# ✅ RAG chain With Image Saving
 # --------------------------
 def get_rag_chain_with_sources(retriever, k=4):
     """Return the source-display RAG chain using an explicit retrieval depth."""

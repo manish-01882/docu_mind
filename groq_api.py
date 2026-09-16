@@ -18,10 +18,35 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 load_dotenv()
-API_KEY = os.getenv("GROQ_API_KEY")
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 TEXT_MODEL = "openai/gpt-oss-20b"
 VISION_MODEL = "qwen/qwen3.6-27b"
+
+
+def get_api_key():
+    """Resolve the Groq key from the environment or Streamlit secrets.
+
+    Streamlit Community Cloud supplies secrets through ``st.secrets`` rather
+    than a ``.env`` file, so both sources are checked. The key is read on each
+    call so a deployed app picks up a rotated secret without a code change.
+    """
+    key = os.getenv("GROQ_API_KEY")
+    if key:
+        return key
+
+    try:
+        import streamlit as st
+
+        return st.secrets.get("GROQ_API_KEY")
+    except Exception:
+        # Outside a Streamlit runtime (CLI, evaluator, Kaggle) there are no
+        # secrets to read, which is not an error.
+        return None
+
+
+def is_configured():
+    """Return whether a live Groq call is possible."""
+    return bool(get_api_key()) and requests is not None
 
 
 def _extract_prompt_text(payload):
@@ -101,12 +126,13 @@ def _build_offline_response(payload, reason=None):
 
 
 def query_groq(payload):
-    if not API_KEY or requests is None:
-        reason = "No GROQ_API_KEY is configured" if not API_KEY else "The requests package is unavailable"
+    api_key = get_api_key()
+    if not api_key or requests is None:
+        reason = "No GROQ_API_KEY is configured" if not api_key else "The requests package is unavailable"
         return _build_offline_response(payload, reason)
 
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 

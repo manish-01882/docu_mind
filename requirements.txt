@@ -1,3 +1,14 @@
+# Deployment runtime for DocuMind on a CPU host.
+#
+# Summarisation and answering run through the Groq API, so no GPU-class model
+# is loaded here. Embeddings still run locally via sentence-transformers, which
+# needs torch -- pinned to the CPU build so pip does not pull the multi-gigabyte
+# CUDA wheel and exhaust a free tier's disk.
+#
+# The PyTorch index also mirrors a few unrelated packages at old versions, so
+# it must stay an *extra* index: pip then picks the newest version across both.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 streamlit
 unstructured[pdf]
 pillow
@@ -7,11 +18,9 @@ tiktoken
 langchain
 langchain-classic
 langchain-community
+langchain-chroma
+langchain-huggingface
 python-dotenv
 requests
 sentence-transformers
-langchain-chroma
-langchain-huggingface
-torch
-transformers>=4.50.0
-accelerate
+torch==2.13.0+cpu

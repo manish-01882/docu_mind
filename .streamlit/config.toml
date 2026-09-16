@@ -1,0 +1,12 @@
+[theme]
+base = "light"
+primaryColor = "#4F46E5"
+
+[server]
+# A hi_res PDF parse holds the uploaded file in memory, so cap uploads well
+# below the host's RAM ceiling.
+maxUploadSize = 15
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false

@@ -1,5 +1,5 @@
 # Base image with Python and system dependencies
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
@@ -20,7 +20,8 @@ COPY . .
 # Ensure unstructured dependencies work
 ENV PIP_NO_CACHE_DIR=1
 RUN pip install --upgrade pip
-RUN pip install "unstructured[all-docs]" pillow lxml
+# requirements.txt already pins unstructured[pdf]; the all-docs extra pulls in
+# unrelated integrations (Whisper among them) that this app never uses.
 RUN pip install -r requirements.txt
 
 # Expose Streamlit default port
@@ -33,4 +34,4 @@ ENV STREAMLIT_SERVER_HEADLESS=true \
     STREAMLIT_SERVER_ENABLEXSRC=false
 
 # Run the Streamlit app
-CMD ["streamlit", "run", "frontend/display.py"]
+CMD ["streamlit", "run", "frontend/display.py", "--server.port=8501", "--server.address=0.0.0.0"]

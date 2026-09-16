@@ -1,12 +1,12 @@
-"""Local image summarisation for retrieval indexing."""
+"""Image summarisation for retrieval indexing."""
 
-from local_model import LocalModelError, summarize_image
+from inference import InferenceError, summarize_image
 
 
 def get_image_summary(image_base64):
     try:
         return summarize_image(image_base64)
-    except LocalModelError as error:
+    except InferenceError as error:
         # A failed description must not become a searchable document.
         print(f"[WARN] Skipping image summary: {error}")
         return ""

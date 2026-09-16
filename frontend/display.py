@@ -158,11 +158,19 @@ from summarization.summarize_image import summarize_images
 from rag.vector_store import get_vectorstore
 from rag.retrieval import setup_retriever, store_documents
 from rag.rag_chain import get_rag_chain, get_rag_chain_with_sources
-from local_model import answer_chat, load_local_model
+from groq_api import is_configured
+from inference import answer_chat, use_local_backend
 
 # --- Streamlit Page Config ---
-st.set_page_config(page_title="MultiModal RAG", layout="centered")
-st.title("📄 MultiModal PDF QA App")
+st.set_page_config(page_title="DocuMind", layout="centered")
+st.title("📄 DocuMind — MultiModal PDF QA")
+
+if not use_local_backend() and not is_configured():
+    st.warning(
+        "No GROQ_API_KEY is configured, so answers come from a limited offline "
+        "fallback instead of the model. Set it in `.streamlit/secrets.toml` locally, "
+        "or under App settings → Secrets once deployed."
+    )
 
 # --- Session State ---
 if "chat_history" not in st.session_state:
@@ -171,13 +179,24 @@ if "chat_history" not in st.session_state:
 if "retriever" not in st.session_state:
     st.session_state.retriever = None
 
-if "pdf_uploaded" not in st.session_state:
-    st.session_state.pdf_uploaded = False
+# Track which upload produced the current retriever so that selecting a
+# different PDF rebuilds the index instead of answering from the previous one.
+if "indexed_file" not in st.session_state:
+    st.session_state.indexed_file = None
 
 
 @st.cache_resource(show_spinner=False)
 def get_local_model_resource():
-    """Keep the local Gemma model loaded across Streamlit reruns."""
+    """Keep local Gemma loaded across reruns, but only when it is the backend.
+
+    On a hosted CPU tier the weights cannot be loaded at all, so this is a no-op
+    unless a local backend was explicitly selected.
+    """
+    if not use_local_backend():
+        return None
+
+    from local_model import load_local_model
+
     return load_local_model()
 
 
@@ -242,8 +261,9 @@ def process_pdf(file_bytes, source_file):
                 elif el_type == "Table":
                     tables.append(el)
 
-    st.info("🧠 Loading local Gemma model...")
-    get_local_model_resource()
+    if use_local_backend():
+        st.info("🧠 Loading local Gemma model...")
+        get_local_model_resource()
 
     st.info("📝 Preparing semantic summaries...")
     text_summaries = summarize_texts([t.text for t in texts])
@@ -263,11 +283,13 @@ def process_pdf(file_bytes, source_file):
 
 # --- Submit Logic ---
 if submit and query:
-    # If PDF was just uploaded for the first time
-    if uploaded_file and not st.session_state.pdf_uploaded:
-        st.session_state.retriever = process_pdf(uploaded_file.read(), uploaded_file.name)
-        st.session_state.pdf_uploaded = True
-        st.success("✅ PDF Processed and stored!")
+    # Index on first use, and again whenever a different PDF is selected.
+    if uploaded_file:
+        file_key = (uploaded_file.name, uploaded_file.size)
+        if st.session_state.indexed_file != file_key:
+            st.session_state.retriever = process_pdf(uploaded_file.read(), uploaded_file.name)
+            st.session_state.indexed_file = file_key
+            st.success("✅ PDF Processed and stored!")
 
     retriever = st.session_state.retriever
 
@@ -288,7 +310,7 @@ if submit and query:
 
         # Check if relevant documents were retrieved
         if not response.strip():
-            st.warning("⚠️ No relevant context found in the PDF. Using local Gemma without document context.")
+            st.warning("⚠️ No relevant context found in the PDF. Answering without document context.")
             get_local_model_resource()
             response, reasoning = split_model_response(answer_chat([("user", query)]))
 
@@ -320,14 +342,14 @@ if submit and query:
                     st.image(f"data:image/jpeg;base64,{img_b64}", caption=f"Image {i+1}")
 
     else:
-        # No PDF uploaded: use local Gemma directly.
-        st.info("💬 No PDF found — using local Gemma to answer the question...")
+        # No PDF uploaded: answer directly from the chat history.
+        st.info("💬 No PDF found — answering from the conversation directly...")
 
         # Reconstruct conversation history (last 10 messages)
         st.info("📜 Building conversation context from history...")
         messages = st.session_state.chat_history[-10:] + [("user", query)]
 
-        st.info("🤖 Querying local Gemma model for response...")
+        st.info("🤖 Querying the model for a response...")
         get_local_model_resource()
         response, reasoning = split_model_response(answer_chat(messages))
 

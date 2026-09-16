@@ -32,7 +32,7 @@ ENV/
 Thumbs.db
 
 # Streamlit
-.streamlit/config.toml
+# config.toml is deployment configuration and is intentionally committed.
 .streamlit/secrets.toml
 
 # Temp/test files (as you mentioned)

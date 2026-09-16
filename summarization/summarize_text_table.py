@@ -1,6 +1,6 @@
-"""Local text and table summarisation for retrieval indexing."""
+"""Text and table summarisation for retrieval indexing."""
 
-from local_model import summarize_text
+from inference import summarize_text
 
 
 def safe_batch(inputs):
