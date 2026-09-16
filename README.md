@@ -209,7 +209,7 @@ Reported metrics: **Hit@k** (a labelled source appeared in the top *k*), **Recal
 
 Required-term coverage is a transparent automated proxy, not a correctness measure. Answer quality still needs human review, or an LLM judge such as RAGAS or DeepEval once the dataset is stable.
 
-Results are written to `evaluation/results/`, which is gitignored. For reference, a local run over the 14-case *Attention Is All You Need* set produced Hit@1 0.21, Hit@3 0.50, Hit@5 0.64 — a baseline to improve against, not a headline number.
+Results are written to `evaluation/results/`, which is gitignored.
 
 See [`evaluation/README.md`](evaluation/README.md) for the labelling workflow and [`evaluation/KAGGLE.md`](evaluation/KAGGLE.md) for running the benchmark on a Kaggle GPU session.
 

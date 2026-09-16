@@ -11,7 +11,7 @@
 # from extraction.extract_pdf import extract_pdf_elements
 # from summarization.summarize_text_table import summarize_texts, summarize_tables
 # from summarization.summarize_image import summarize_images
-# from rag.vector_store import get_vectorstore
+# from rag.vector_store import get_vectorstore, release_vectorstore
 # from rag.retrieval import setup_retriever, store_documents
 # from rag.rag_chain import get_rag_chain, get_rag_chain_with_sources
 # from groq_api import TEXT_MODEL, query_groq
@@ -287,6 +287,12 @@ def process_pdf(file_bytes, source_file):
         )
 
     st.info("🗂️ Setting up the vector store...")
+    # Each upload gets its own collection, so drop the previous document's
+    # collection rather than letting it accumulate for the life of the process.
+    previous = st.session_state.get("retriever")
+    if previous is not None:
+        release_vectorstore(previous.vectorstore)
+
     vectorstore = get_vectorstore()
     retriever = setup_retriever(vectorstore)
 

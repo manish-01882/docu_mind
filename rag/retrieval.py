@@ -87,7 +87,13 @@ def store_documents(
         Document(page_content=summary, metadata=metadata)
         for (_, _, summary), metadata in zip(pairs, source_metadata)
     ]
-    retriever.vectorstore.add_documents(summary_docs)
+    # Pass the deterministic doc_id as Chroma's own key. Without explicit ids
+    # Chroma assigns a random UUID per call, so re-indexing a document would
+    # append a second copy of every element instead of replacing it.
+    retriever.vectorstore.add_documents(
+        summary_docs,
+        ids=[metadata[id_key] for metadata in source_metadata],
+    )
 
     # Store full elements with identical metadata so source mode and the
     # evaluator can trace every result back to its PDF location.
