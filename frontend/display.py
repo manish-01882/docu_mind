@@ -147,6 +147,7 @@ import streamlit as st
 import sys
 import os
 import re
+from contextlib import contextmanager
 from tempfile import NamedTemporaryFile
 
 # Ensure local imports work
@@ -157,7 +158,7 @@ from summarization.summarize_text_table import summarize_texts, summarize_tables
 from summarization.summarize_image import summarize_images
 from rag.vector_store import get_vectorstore
 from rag.retrieval import setup_retriever, store_documents
-from rag.rag_chain import get_rag_chain, get_rag_chain_with_sources
+from rag.rag_chain import generate_answer, retrieve_context
 from groq_api import is_configured
 from inference import answer_chat, use_local_backend
 
@@ -235,16 +236,37 @@ def show_model_response(answer, reasoning=""):
 uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
 query = st.text_input("Ask a question:")
 rag_mode = st.radio("Select RAG Mode", ["Only response", "Response and source"]) if uploaded_file else None
+retrieval_k = st.slider(
+    "Sources to retrieve (k)", min_value=1, max_value=10, value=4,
+    help="How many indexed elements are pulled in as context for each answer.",
+) if uploaded_file else 4
 submit = st.button("Submit")
 
 # --- Preprocessing Function ---
-def process_pdf(file_bytes, source_file):
+@contextmanager
+def temporary_pdf(file_bytes):
+    """Write an upload to disk for the parser, then always remove it.
+
+    ``unstructured`` needs a real path rather than a buffer, but the file must
+    not outlive the parse: uploads would otherwise accumulate on the server for
+    the lifetime of the container.
+    """
     with NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(file_bytes)
-        file_path = tmp.name
+        path = tmp.name
+    try:
+        yield path
+    finally:
+        try:
+            os.unlink(path)
+        except OSError as error:
+            print(f"[WARN] Could not remove temporary upload: {error}")
 
+
+def process_pdf(file_bytes, source_file):
     st.info("📚 Chunking PDF into smaller sections...")
-    chunks = extract_pdf_elements(file_path)
+    with temporary_pdf(file_bytes) as file_path:
+        chunks = extract_pdf_elements(file_path)
 
     st.info("🧩 Splitting chunks into text, tables, and images...")
     texts, tables, images = [], [], []
@@ -281,9 +303,10 @@ def process_pdf(file_bytes, source_file):
     if indexed < attempted:
         st.warning(
             f"⚠️ {attempted - indexed} of {attempted} elements could not be summarised "
-            "and were left out of the index, usually because of Groq rate limits. "
-            "Answers may miss parts of this document — wait a minute and re-upload "
-            "for full coverage."
+            "and were left out of the index, so answers may miss parts of this "
+            "document. The app log gives the reason for each one — common causes are "
+            "Groq rate limits (retry in a minute) and a configured model your API key "
+            "cannot access (the log shows HTTP 404)."
         )
 
     st.info("🗂️ Setting up the vector store...")
@@ -316,25 +339,26 @@ if submit and query:
     retriever = st.session_state.retriever
 
     if uploaded_file:
-        # Try retrieving documents
-        if rag_mode == "Only response":
-            chain = get_rag_chain(retriever)
-            output = chain.invoke({"question": query})
-            raw_response = output
+        # Retrieve first, so an empty index is detected before a model call is
+        # spent answering from no context at all.
+        context = retrieve_context(retriever, query, k=retrieval_k)
+        retrieved_texts = context.get("texts", [])
+        retrieved_images = context.get("images", [])
+        sources = context if rag_mode == "Response and source" else None
+
+        if not retrieved_texts and not retrieved_images:
+            st.warning(
+                "⚠️ Nothing was retrieved from this PDF, so the answer below is not "
+                "grounded in it. This usually means indexing was incomplete — "
+                "re-upload the file and check for rate-limit warnings."
+            )
             sources = None
-        else:
-            chain = get_rag_chain_with_sources(retriever)
-            output = chain.invoke({"question": query})
-            raw_response = output.get("response", "")
-            sources = output.get("context", {})
-
-        response, reasoning = split_model_response(raw_response)
-
-        # Check if relevant documents were retrieved
-        if not response.strip():
-            st.warning("⚠️ No relevant context found in the PDF. Answering without document context.")
             get_local_model_resource()
             response, reasoning = split_model_response(answer_chat([("user", query)]))
+        else:
+            get_local_model_resource()
+            raw_response = generate_answer({"question": query, "context": context})
+            response, reasoning = split_model_response(raw_response)
 
         # Keep only the final answer in the conversation context and history.
         st.session_state.chat_history.append(("user", query))

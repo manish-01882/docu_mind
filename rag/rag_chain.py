@@ -1,7 +1,6 @@
 # rag_chain.py
 import sys
 import os
-import uuid
 from base64 import b64decode
 from io import BytesIO
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
@@ -11,22 +10,6 @@ from PIL import Image, UnidentifiedImageError
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# --------------------------
-# ✅ Image Save Utility
-# --------------------------
-def save_image_if_relevant(image_b64, folder="saved_images", prefix="matched_image"):
-    try:
-        os.makedirs(folder, exist_ok=True)  # Ensure directory exists
-        if "," in image_b64:
-            image_b64 = image_b64.split(",")[1]  # Remove data URL prefix if present
-        image_data = b64decode(image_b64)
-        filename = os.path.join(folder, f"{prefix}_{uuid.uuid4().hex[:8]}.jpg")
-        with open(filename, "wb") as f:
-            f.write(image_data)
-        print(f"[INFO] ✅ Image saved: {filename}")
-    except Exception as e:
-        print(f"[ERROR] ❌ Failed to save image: {e}")
 
 def is_image_base64(value):
     """Return whether a string decodes to a real image, not merely Base64 bytes."""
@@ -71,6 +54,18 @@ def parse_docs(docs, docstore=None):
 
 
 
+def retrieve_context(retriever, question, k=4):
+    """Return retrieved context split into ``texts`` and ``images``.
+
+    Exposed separately so a caller can see whether anything was retrieved
+    before spending a model call on an answer.
+    """
+    return parse_docs(
+        retriever.vectorstore.similarity_search(question, k=k),
+        retriever.docstore,
+    )
+
+
 def generate_answer(kwargs):
     """Answer from the retrieved text and image context via the active backend."""
     context = kwargs["context"]
@@ -87,12 +82,7 @@ def get_rag_chain(retriever, k=4):
     """Return the standard RAG chain using an explicit retrieval depth."""
     return (
         {
-            "context": RunnableLambda(
-                lambda x: parse_docs(
-                    retriever.vectorstore.similarity_search(x["question"], k=k),
-                    retriever.docstore,
-                )
-            ),
+            "context": RunnableLambda(lambda x: retrieve_context(retriever, x["question"], k)),
             "question": RunnableLambda(lambda x: x["question"])
         }
         | RunnableLambda(generate_answer)
@@ -105,47 +95,26 @@ def get_rag_chain(retriever, k=4):
 # --------------------------
 def get_rag_chain_with_sources(retriever, k=4):
     """Return the source-display RAG chain using an explicit retrieval depth."""
-    def process_and_save(response_with_context):
+    def log_context_size(response_with_context):
+        """Trace retrieval volume only.
+
+        Document text and figures belong to the person who uploaded them, so
+        they are never written to the server log or to disk.
+        """
         context = response_with_context.get("context", {})
-        images = context.get("images", [])
-        texts = context.get("texts", [])
-        response = response_with_context.get("response", "")
-
-        # ✅ Print Response
-        print("\n🧠 [RESPONSE]:\n", response)
-
-        # ✅ Print Text Context
-        print("\n📚 [TEXT CONTEXT]:")
-        for i, doc in enumerate(texts):
-            print(f"\n--- Text Document {i+1} ---")
-            try:
-                print(doc.page_content)
-            except:
-                print(doc)
-
-        # ✅ Save all images, regardless of whether 'image' is in response
-        if images:
-            print(f"\n🖼️ [IMAGE CONTEXT]: {len(images)} image(s) found.")
-            for idx, img in enumerate(images):
-                save_image_if_relevant(img, prefix=f"matched_image_{idx}")
-        else:
-            print("[INFO] ❌ No images found in context.")
-
+        print(
+            f"[INFO] Retrieved {len(context.get('texts', []))} text chunk(s) "
+            f"and {len(context.get('images', []))} image(s)."
+        )
         return response_with_context
-
 
     return (
         {
-            "context": RunnableLambda(
-                lambda x: parse_docs(
-                    retriever.vectorstore.similarity_search(x["question"], k=k),
-                    retriever.docstore,
-                )
-            ),
+            "context": RunnableLambda(lambda x: retrieve_context(retriever, x["question"], k)),
             "question": RunnableLambda(lambda x: x["question"])
         }
         | RunnablePassthrough().assign(
             response=(RunnableLambda(generate_answer) | StrOutputParser())
         )
-        | RunnableLambda(process_and_save)
+        | RunnableLambda(log_context_size)
     )

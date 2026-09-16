@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - optional dependency
 load_dotenv()
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 TEXT_MODEL = "openai/gpt-oss-20b"
-VISION_MODEL = "qwen/qwen3.6-27b"
+VISION_MODEL = "qwen/qwen3.8-27b"
 
 # Free-tier accounts allow roughly 30 requests per minute, and indexing a PDF
 # issues one request per extracted element, so bursts hit 429 routinely.
